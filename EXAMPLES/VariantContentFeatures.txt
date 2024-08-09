@@ -1,0 +1,19 @@
+<script>
+export default {
+    name: 'variant-content-features',
+    props: {
+        baseProductModel: {
+            type: Object,
+            required: true
+        },
+        productVariant: {
+            type: Object,
+            required: true
+        },
+        translations: {
+            type: Object,
+            required: true
+        }
+    }
+};
+</script>

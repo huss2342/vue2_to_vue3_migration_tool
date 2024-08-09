@@ -1,0 +1,62 @@
+<script>
+import { mapGetters } from 'vuex';
+import PartialLoader from 'js/components/UI/PartialLoader';
+import VLink from 'js/components/UI/VLink';
+import { pushTrackingEvent } from 'js/common/analytics';
+import { INVENTORY } from 'js/common/analyticsEvents';
+
+export default {
+    name: 'variant-content-inventory',
+    components: {
+        PartialLoader,
+        VLink
+    },
+    props: {
+        baseProductModel: {
+            type: Object,
+            required: true
+        },
+        productVariant: {
+            type: Object,
+            required: true
+        },
+        translations: {
+            type: Object,
+            required: true
+        }
+    },
+    data() {
+        return {
+            activeTab: 1,
+            isLoading: true
+        };
+    },
+    computed: {
+        ...mapGetters([
+            'fetchingInventory',
+            'itemInventory',
+            'salesData'
+        ]),
+        loadingMessage() {
+            return (this.activeTab === 1) ? this.translations.GatheringInventoryData : this.translations.GatheringSalesData;
+        }
+    },
+    mounted() {},
+    methods: {
+        toggleTab(tab) {
+            this.isLoading = true;
+            this.activeTab = tab;
+            if (tab === 1) {
+                pushTrackingEvent(INVENTORY.OVERVIEW_TOGGLE.CATEGORY,
+                    INVENTORY.OVERVIEW_TOGGLE.ACTION,
+                    this.itemInventory.ItemNumber);
+            } else {
+                pushTrackingEvent(INVENTORY.SALES_TOGGLE.CATEGORY,
+                    INVENTORY.SALES_TOGGLE.ACTION,
+                    this.itemInventory.ItemNumber);
+            }
+        }
+    }
+
+};
+</script>

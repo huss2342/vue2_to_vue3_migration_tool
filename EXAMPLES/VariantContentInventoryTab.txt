@@ -1,0 +1,34 @@
+<script>
+import TranslationsHelper from 'js/mixins/translations-helper';
+import InventorySalesData from 'js/mixins/inventory-sales-data';
+import DataTablePager from 'js/components/UI/DataTablePager';
+import { mapGetters } from 'vuex';
+
+export default {
+    name: 'variant-content-inventory-tab',
+    components: {
+        DataTablePager
+    },
+    mixins: [InventorySalesData, TranslationsHelper],
+    computed: {
+        ...mapGetters([
+            'availability',
+            'itemInventory'
+        ]),
+        myDistributorsTotal() {
+            return this.itemInventory.Distributors.map(item => item.QuantityForPartner).reduce((prev, curr) => prev + curr, 0);
+        },
+        pageGroup() {
+            const begin = this.getPageBeginning(this.currentPage);
+            const end = this.getPageEnd(this.pagedDistributors, this.itemInventory.Distributors);
+            return this.replaceTranslationPlaceholder(this.translations.PageGroup, begin, end, this.itemInventory.Distributors.length);
+        },
+        pagedDistributors() {
+            return this.paginateArray(this.itemInventory.Distributors, 10);
+        }
+    },
+    methods: {
+        // Shared Vue instance in js/mixins/inventory-sales-data
+    }
+};
+</script>
