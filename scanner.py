@@ -58,9 +58,18 @@ class Vue2Scanner:
                 self._scan_lifecycle_hook(prop.key.name, prop.value)
 
     def _scan_data(self, node):
-        # if node.type == 'FunctionExpression':
-        #     body = self._node_to_string(node.body)
-        #     self.component.data = body
+        if node.type == 'FunctionExpression':
+            # Extract the return statement from the function body
+            return_statement = next((stmt for stmt in node.body.body if stmt.type == 'ReturnStatement'), None)
+
+            if return_statement and return_statement.argument.type == 'ObjectExpression':
+                # Process each property in the returned object
+                for prop in return_statement.argument.properties:
+                    if prop.type == 'Property':
+                        key = prop.key.name
+                        value = self._node_to_string(prop.value)
+                        self.component.data[key] = value
+
         print(f"DEBUG: Scanned data: {self.component.data}")
 
     def _scan_watch(self, node):

@@ -2,9 +2,6 @@ import re
 import jsbeautifier
 
 
-
-
-
 class Vue3Generator:
     def __init__(self, component):
         self.component = component
@@ -16,15 +13,21 @@ class Vue3Generator:
         props = self._generate_props()
         setup = self._generate_setup()
 
-        # Beautify setup content and fixing syntax
-        options = jsbeautifier.default_options()
-        options.wrap_line_length = 149
-        setup = jsbeautifier.beautify(setup, options)
+        # fixing syntax then making it look prettier
         setup = re.sub(r';;\s*$', ';', setup, flags=re.MULTILINE)
         setup = re.sub(r'\)\s*$', ');', setup, flags=re.MULTILINE)
         setup = re.sub(r"this\.\$store", r'store', setup)
         setup = self.fix_this(setup)
 
+        props_count = len(re.findall(r'\bprops\b', setup))
+        if props_count == 1:
+            setup = re.sub(r'\bprops\b', '', setup)
+
+        options = jsbeautifier.default_options()
+        options.wrap_line_length = 149
+        setup = jsbeautifier.beautify(setup, options)
+
+        # starting
         component_content = f"{self.indent}name: '{self.component.name}'"
         if components:
             component_content += f",\n{components}"
@@ -71,7 +74,7 @@ export default defineComponent({{
 
         for import_statement in self.component.imports:
             if 'vuex' not in import_statement and 'mapGetters' not in import_statement:
-                imports.append(import_statement+";")
+                imports.append(import_statement + ";")
         return "\n".join(imports)
 
     def _generate_components(self):
@@ -170,7 +173,7 @@ export default defineComponent({{
                 else:
                     if body.startswith('{ ') and body.endswith(' }'):
                         body = body[2:-2].strip()
-                    if body.startswith('return '): # 15 to remove the duplicated ()=>{ as well as return
+                    if body.startswith('return '):  # 15 to remove the duplicated ()=>{ as well as return
                         body = body[7:].strip()
                     content.append(f"{self.indent}{self.indent}const {name} = computed(() => {body});")
         if content:
@@ -181,6 +184,8 @@ export default defineComponent({{
         content = []
         for name, value in self.component.data.items():
             content.append(f"{self.indent}{self.indent}const {name} = ref({value});")
+        if content:
+            content.append('')
         return content
 
     def _generate_methods(self):
@@ -217,12 +222,13 @@ export default defineComponent({{
         }
         for hook, body in self.component.lifecycle_hooks.items():
             vue3_hook = lifecycle_mapping.get(hook, hook)
-            content.append(f"{self.indent}{self.indent}{vue3_hook}({self.indent}{self.indent}{self.indent}{body}\n{self.indent}{self.indent});")
+            content.append(
+                f"{self.indent}{self.indent}{vue3_hook}({self.indent}{self.indent}{self.indent}{body}\n{self.indent}{self.indent});")
         return content
 
     def fix_this(self, setup):
         for prop in self.component.props:
-            setup = re.sub(r'\bthis\.' + prop + r'\b', prop + '.value', setup)
+            setup = re.sub(r'\bthis\.' + prop + r'\b', 'props.' + prop, setup)
 
         for data in self.component.data:
             setup = re.sub(r'\bthis\.' + data + r'\b', data + '.value', setup)
