@@ -1,6 +1,6 @@
 from scanner import Vue2Scanner
 from generator import Vue3Generator
-import jsbeautifier
+# import jsbeautifier
 
 def read_file(file_path):
     with open(file_path, 'r') as file:

@@ -42,6 +42,8 @@ class Vue2Scanner:
         for prop in obj.properties:
             if prop.key.name == 'name':
                 self._scan_name(prop.value)
+            elif prop.key.name == 'data':
+                self._scan_data(prop.value)
             elif prop.key.name == 'components':
                 self._scan_components(prop.value)
             elif prop.key.name == 'props':
@@ -54,6 +56,12 @@ class Vue2Scanner:
                 self._scan_watch(prop.value)
             elif prop.key.name in ['created', 'mounted', 'beforeDestroy']:
                 self._scan_lifecycle_hook(prop.key.name, prop.value)
+
+    def _scan_data(self, node):
+        # if node.type == 'FunctionExpression':
+        #     body = self._node_to_string(node.body)
+        #     self.component.data = body
+        print(f"DEBUG: Scanned data: {self.component.data}")
 
     def _scan_watch(self, node):
         if node.type == 'ObjectExpression':
@@ -89,6 +97,7 @@ class Vue2Scanner:
 
     def _get_prop_value(self, node):
         if node.type == 'Identifier':
+            print(f"DEBUG: Found identifier: {node.name}")
             return node.name
         elif node.type == 'ObjectExpression':
             return {p.key.name: self._get_prop_value(p.value) for p in node.properties}
@@ -112,6 +121,8 @@ class Vue2Scanner:
             elif prop.type == 'Property':
                 name = prop.key.name
                 body = self._node_to_string(prop.value)
+                # remove () => { return ... } from computed properties using regex
+                body = re.sub(r'\(\) => \{ return (.*)\}', r'\1', body)
                 self.component.computed[name] = body
             else:
                 print(f"DEBUG: Unexpected property type in computed: {prop.type}")
@@ -135,6 +146,9 @@ class Vue2Scanner:
         if node.type in ['FunctionExpression', 'ArrowFunctionExpression']:
             params = ', '.join([p.name for p in node.params])
             body = self._node_to_string(node.body)
+            # if only one parameterm, remove parentheses
+            if len(node.params) == 1:
+                return f"{params} => {body}"
             return f"({params}) => {body}"
         elif node.type == 'BlockStatement':
             statements = [self._node_to_string(stmt) for stmt in node.body]
@@ -154,7 +168,7 @@ class Vue2Scanner:
         elif node.type == 'AssignmentExpression':
             left = self._node_to_string(node.left)
             right = self._node_to_string(node.right)
-            return f"{left} = {right}"
+            return f"{left} = {right};"
         elif node.type == 'VariableDeclaration':
             declarations = [self._node_to_string(decl) for decl in node.declarations]
             return f"{node.kind} {', '.join(declarations)}"
@@ -168,10 +182,16 @@ class Vue2Scanner:
             return f"{left} {node.operator} {right}"
         elif node.type == 'UnaryExpression':
             argument = self._node_to_string(node.argument)
+            if node.operator == '!' and node.argument.type == 'LogicalExpression':
+                return f"{node.operator}({argument})"
             return f"{node.operator}{argument}"
         elif node.type == 'LogicalExpression':
             left = self._node_to_string(node.left)
             right = self._node_to_string(node.right)
+            if node.left.type == 'LogicalExpression' and node.left.operator != node.operator:
+                left = f"({left})"
+            if node.right.type == 'LogicalExpression' and node.right.operator != node.operator:
+                right = f"({right})"
             return f"{left} {node.operator} {right}"
         elif node.type == 'Literal':
             if isinstance(node.value, bool):
@@ -181,8 +201,12 @@ class Vue2Scanner:
             return node.name
         elif node.type == 'MemberExpression':
             obj = self._node_to_string(node.object)
-            prop = self._node_to_string(node.property)
-            return f"{obj}.{prop}"
+            if node.computed:
+                prop = self._node_to_string(node.property)
+                return f"{obj}[{prop}]"
+            else:
+                prop = self._node_to_string(node.property)
+                return f"{obj}.{prop}"
         elif node.type == 'CallExpression':
             callee = self._node_to_string(node.callee)
             args = ', '.join([self._node_to_string(arg) for arg in node.arguments])
@@ -202,12 +226,22 @@ class Vue2Scanner:
         for node in parsed.body:
             if node.type == 'ImportDeclaration':
                 source = node.source.value
-                specifiers = []
+                default_specifiers = []
+                named_specifiers = []
                 for specifier in node.specifiers:
                     if specifier.type == 'ImportDefaultSpecifier':
-                        specifiers.append(specifier.local.name)
+                        default_specifiers.append(specifier.local.name)
                     elif specifier.type == 'ImportSpecifier':
-                        specifiers.append(specifier.imported.name)
-                import_str = f"import {', '.join(specifiers)} from '{source}'"
+                        named_specifiers.append(specifier.imported.name)
+
+                if default_specifiers and named_specifiers:
+                    import_str = f"import {', '.join(default_specifiers)}, {{ {', '.join(named_specifiers)} }} from '{source}'"
+                elif default_specifiers:
+                    import_str = f"import {', '.join(default_specifiers)} from '{source}'"
+                elif named_specifiers:
+                    import_str = f"import {{ {', '.join(named_specifiers)} }} from '{source}'"
+                else:
+                    continue
+
                 self.component.imports.add(import_str)
         print(f"DEBUG: Scanned imports: {self.component.imports}")
