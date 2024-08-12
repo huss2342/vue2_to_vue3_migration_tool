@@ -1,6 +1,6 @@
 from scanner import Vue2Scanner
 from generator import Vue3Generator
-
+import jsbeautifier
 
 def read_file(file_path):
     with open(file_path, 'r') as file:
@@ -27,6 +27,8 @@ def convert_vue2_to_vue3(content):
     print(f"Lifecycle hooks: {component.lifecycle_hooks}")
     print(f"Uses Vuex: {component.uses_vuex}")
     print(f"Imports: {component.imports}")
+    print(f"Components: {component.components}")
+    print(f"Data: {component.data}")
 
     generator = Vue3Generator(component)
     converted = generator.generate()
@@ -45,6 +47,7 @@ def main():
     content = read_file(input_file)
 
     converted_content = convert_vue2_to_vue3(content)
+    # converted_content = jsbeautifier.beautify(converted_content)
 
     print(f"\nDEBUG: Writing output to {output_file}")
     write_file(output_file, converted_content)

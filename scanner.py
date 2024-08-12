@@ -1,56 +1,6 @@
 import re
+import esprima
 from Vue2Component import Vue2Component
-
-
-def _parse_props(props_content):
-    props = {}
-    brace_count = 0
-    current_prop = None
-    current_value = []
-    in_string = False
-    string_delimiter = None
-
-    for char in props_content:
-        if char in ['"', "'"]:
-            if not in_string:
-                in_string = True
-                string_delimiter = char
-            elif string_delimiter == char:
-                in_string = False
-                string_delimiter = None
-
-        if not in_string:
-            if char == '{':
-                brace_count += 1
-                if brace_count == 1 and current_prop is None:
-                    continue
-            elif char == '}':
-                brace_count -= 1
-                if brace_count == 0:
-                    if current_prop:
-                        props[current_prop] = ''.join(current_value).strip()
-                        print(f"DEBUG: Added prop: {current_prop} = {props[current_prop]}")
-                    current_prop = None
-                    current_value = []
-                    continue
-            elif char == ',' and brace_count == 1:
-                if current_prop:
-                    props[current_prop] = ''.join(current_value).strip()
-                    print(f"DEBUG: Added prop: {current_prop} = {props[current_prop]}")
-                current_prop = None
-                current_value = []
-                continue
-            elif char == ':' and brace_count == 1:
-                current_prop = ''.join(current_value).strip()
-                current_value = []
-                continue
-
-        if brace_count > 0 or char.strip():
-            current_value.append(char)
-
-    print(f"DEBUG: Parsed props: {props}")
-    return props
-
 
 class Vue2Scanner:
     def __init__(self, content):
@@ -63,12 +13,12 @@ class Vue2Scanner:
             print("DEBUG: No script content found")
             return self.component
 
-        self._scan_name(script_content)
-        self._scan_components(script_content)
-        self._scan_props(script_content)
-        self._scan_computed(script_content)
-        self._scan_methods(script_content)
-        self._scan_imports(script_content)
+        try:
+            parsed = esprima.parseModule(script_content)
+            self._scan_imports(parsed)
+            self._scan_export_default(parsed)
+        except Exception as e:
+            print(f"Error parsing script content: {str(e)}")
 
         return self.component
 
@@ -82,86 +32,182 @@ class Vue2Scanner:
             print("DEBUG: No script content found")
             return ""
 
-    def _scan_name(self, script_content):
-        print(f"DEBUG: Searching for name")
-        name_match = re.search(r'name:\s*[\'"](\w+(?:-\w+)*)[\'"]', script_content, re.MULTILINE | re.DOTALL)
-        if name_match:
-            self.component.name = name_match.group(1)
-            print(f"DEBUG: Found name: {self.component.name}")
-        else:
-            print("DEBUG: Name not found")
+    def _scan_export_default(self, parsed):
+        for node in parsed.body:
+            if node.type == 'ExportDefaultDeclaration':
+                if node.declaration.type == 'ObjectExpression':
+                    self._scan_component_object(node.declaration)
+
+    def _scan_component_object(self, obj):
+        for prop in obj.properties:
+            if prop.key.name == 'name':
+                self._scan_name(prop.value)
+            elif prop.key.name == 'components':
+                self._scan_components(prop.value)
+            elif prop.key.name == 'props':
+                self._scan_props(prop.value)
+            elif prop.key.name == 'computed':
+                self._scan_computed(prop.value)
+            elif prop.key.name == 'methods':
+                self._scan_methods(prop.value)
+            elif prop.key.name == 'watch':
+                self._scan_watch(prop.value)
+            elif prop.key.name in ['created', 'mounted', 'beforeDestroy']:
+                self._scan_lifecycle_hook(prop.key.name, prop.value)
+
+    def _scan_watch(self, node):
+        if node.type == 'ObjectExpression':
+            for prop in node.properties:
+                name = prop.key.name
+                body = self._node_to_string(prop.value)
+                self.component.watch[name] = body
+        print(f"DEBUG: Scanned watch: {self.component.watch}")
+
+    def _scan_lifecycle_hook(self, hook_name, node):
+        body = self._node_to_string(node)
+        self.component.lifecycle_hooks[hook_name] = body
+        print(f"DEBUG: Scanned lifecycle hook {hook_name}: {body}")
+
+    def _scan_name(self, node):
+        if node.type == 'Literal':
+            self.component.name = node.value
         print(f"DEBUG: Scanned name: {self.component.name}")
 
-    def _scan_props(self, script_content):
-        print(f"DEBUG: Searching for props")
-        props_start_match = re.search(r'props:\s*\{', script_content)
-
-        if props_start_match:
-            start_index = props_start_match.end() - 1  # Start after 'props: {'
-            brace_count = 1
-            end_index = start_index
-
-            # Iterate through the script content to find the matching closing brace
-            while brace_count > 0 and end_index < len(script_content):
-                end_index += 1
-                char = script_content[end_index]
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-
-            props_content = script_content[start_index:end_index + 1]
-            print(f"DEBUG: Found props content:\n{props_content}")
-            self.component.props = _parse_props(props_content)
-        else:
-            print("DEBUG: Props not found")
-
-        print(f"DEBUG: Scanned props: {self.component.props}")
-
-    def _scan_components(self, script_content):
-        components_match = re.search(r'components:\s*({[\s\S]*?})', script_content)
-        if components_match:
-            components_content = components_match.group(1)
-            components = re.findall(r'(\w+)(?:\s*:\s*\w+)?', components_content)
-            self.component.components = {comp: comp for comp in components}
+    def _scan_components(self, node):
+        if node.type == 'ObjectExpression':
+            for prop in node.properties:
+                self.component.components[prop.key.name] = prop.key.name
         print(f"DEBUG: Scanned components: {self.component.components}")
 
-    def _scan_computed(self, script_content):
-        computed_match = re.search(r'computed:\s*({[\s\S]*?})', script_content)
-        if computed_match:
-            self.component.has_setup_content = True
-            computed_content = computed_match.group(1)
-            self._scan_mapgetters(computed_content)
-            self._scan_other_computed(computed_content)
-        print(f"DEBUG: Scanned computed: {self.component.computed}")
+    def _scan_props(self, node):
+        if node.type == 'ObjectExpression':
+            for prop in node.properties:
+                prop_name = prop.key.name
+                prop_value = self._get_prop_value(prop.value)
+                self.component.props[prop_name] = prop_value
+        print(f"DEBUG: Scanned props: {self.component.props}")
 
-    def _scan_mapgetters(self, computed_content):
-        mapgetters_match = re.search(r'\.{3}mapGetters\(\[([\s\S]*?)\]\)', computed_content)
-        if mapgetters_match:
-            self.component.has_setup_content = True
-            self.component.uses_vuex = True
-            getters = re.findall(r'[\'"](\w+)[\'"]', mapgetters_match.group(1))
-            for getter in getters:
-                self.component.computed[getter] = f"store.getters.{getter}"
-        print(f"DEBUG: Scanned mapGetters: {self.component.computed}")
+    def _get_prop_value(self, node):
+        if node.type == 'Identifier':
+            return node.name
+        elif node.type == 'ObjectExpression':
+            return {p.key.name: self._get_prop_value(p.value) for p in node.properties}
+        elif node.type == 'Literal':
+            return node.value
+        return str(node)
 
-    def _scan_other_computed(self, computed_content):
-        other_computed = re.findall(r'(\w+)\s*\([^)]*\)\s*{([\s\S]*?)}', computed_content)
-        for name, body in other_computed:
-            self.component.computed[name] = body.strip()
-        print(f"DEBUG: Scanned other computed: {self.component.computed}")
-
-    def _scan_methods(self, script_content):
-        methods_match = re.search(r'methods:\s*({[\s\S]*?})', script_content)
-        if methods_match:
-            self.component.has_setup_content = True
-            methods_content = methods_match.group(1)
-            methods = re.findall(r'(\w+)\s*\((.*?)\)\s*{([\s\S]*?)}', methods_content, re.DOTALL)
-            self.component.methods = {name: (params.strip(), body.strip()) for name, params, body in methods}
+    def _scan_methods(self, node):
+        if node.type == 'ObjectExpression':
+            for prop in node.properties:
+                name = prop.key.name
+                body = self._node_to_string(prop.value)
+                self.component.methods[name] = body
+        self.component.has_setup_content = bool(self.component.methods)
         print(f"DEBUG: Scanned methods: {self.component.methods}")
 
-    def _scan_imports(self, script_content):
-        import_matches = re.findall(r'import.*?(?:from\s+[\'"].*?[\'"]|[\'"].*?[\'"]).*?;?', script_content, re.DOTALL)
-        for import_match in import_matches:
-            self.component.imports.add(import_match.strip().rstrip(';'))
+    def _scan_computed(self, properties):
+        for prop in properties.properties:
+            if prop.type == 'SpreadElement':
+                self._scan_mapgetters(prop.argument)
+            elif prop.type == 'Property':
+                name = prop.key.name
+                body = self._node_to_string(prop.value)
+                self.component.computed[name] = body
+            else:
+                print(f"DEBUG: Unexpected property type in computed: {prop.type}")
+
+        print(f"DEBUG: Final computed properties: {self.component.computed}")
+
+    def _scan_mapgetters(self, node):
+        if node.type == 'CallExpression' and node.callee.name == 'mapGetters':
+            self.component.uses_vuex = True
+            if node.arguments and hasattr(node.arguments[0], 'type') and node.arguments[0].type == 'ArrayExpression':
+                for element in node.arguments[0].elements:
+                    if hasattr(element, 'type') and element.type == 'Literal':
+                        getter_name = element.value
+                        self.component.computed[getter_name] = f"store.getters.{getter_name}"
+                    else:
+                        print(f"DEBUG: Unexpected element type in mapGetters: {getattr(element, 'type', 'Unknown')}")
+            else:
+                print("DEBUG: Unexpected argument structure in mapGetters call")
+
+    def _node_to_string(self, node):
+        if node.type in ['FunctionExpression', 'ArrowFunctionExpression']:
+            params = ', '.join([p.name for p in node.params])
+            body = self._node_to_string(node.body)
+            return f"({params}) => {body}"
+        elif node.type == 'BlockStatement':
+            statements = [self._node_to_string(stmt) for stmt in node.body]
+            return '{ ' + '; '.join(statements) + ' }'
+        elif node.type == 'ReturnStatement':
+            return f"return {self._node_to_string(node.argument)}"
+        elif node.type == 'IfStatement':
+            condition = self._node_to_string(node.test)
+            consequent = self._node_to_string(node.consequent)
+            alternate = self._node_to_string(node.alternate) if node.alternate else None
+            if alternate:
+                return f"if ({condition}) {consequent} else {alternate}"
+            else:
+                return f"if ({condition}) {consequent}"
+        elif node.type == 'ExpressionStatement':
+            return self._node_to_string(node.expression)
+        elif node.type == 'AssignmentExpression':
+            left = self._node_to_string(node.left)
+            right = self._node_to_string(node.right)
+            return f"{left} = {right}"
+        elif node.type == 'VariableDeclaration':
+            declarations = [self._node_to_string(decl) for decl in node.declarations]
+            return f"{node.kind} {', '.join(declarations)}"
+        elif node.type == 'VariableDeclarator':
+            id_str = self._node_to_string(node.id)
+            init_str = self._node_to_string(node.init) if node.init else None
+            return f"{id_str} = {init_str}" if init_str else id_str
+        elif node.type == 'BinaryExpression':
+            left = self._node_to_string(node.left)
+            right = self._node_to_string(node.right)
+            return f"{left} {node.operator} {right}"
+        elif node.type == 'UnaryExpression':
+            argument = self._node_to_string(node.argument)
+            return f"{node.operator}{argument}"
+        elif node.type == 'LogicalExpression':
+            left = self._node_to_string(node.left)
+            right = self._node_to_string(node.right)
+            return f"{left} {node.operator} {right}"
+        elif node.type == 'Literal':
+            if isinstance(node.value, bool):
+                return str(node.value).lower()
+            return repr(node.value)
+        elif node.type == 'Identifier':
+            return node.name
+        elif node.type == 'MemberExpression':
+            obj = self._node_to_string(node.object)
+            prop = self._node_to_string(node.property)
+            return f"{obj}.{prop}"
+        elif node.type == 'CallExpression':
+            callee = self._node_to_string(node.callee)
+            args = ', '.join([self._node_to_string(arg) for arg in node.arguments])
+            return f"{callee}({args})"
+        elif node.type == 'ThisExpression':
+            return 'this'
+        elif node.type == 'ArrayExpression':
+            elements = [self._node_to_string(el) for el in node.elements]
+            return f"[{', '.join(elements)}]"
+        elif node.type == 'ObjectExpression':
+            properties = [f"{p.key.name}: {self._node_to_string(p.value)}" for p in node.properties]
+            return f"{{{', '.join(properties)}}}"
+        else:
+            return f"/* Unsupported node type: {node.type} */"
+
+    def _scan_imports(self, parsed):
+        for node in parsed.body:
+            if node.type == 'ImportDeclaration':
+                source = node.source.value
+                specifiers = []
+                for specifier in node.specifiers:
+                    if specifier.type == 'ImportDefaultSpecifier':
+                        specifiers.append(specifier.local.name)
+                    elif specifier.type == 'ImportSpecifier':
+                        specifiers.append(specifier.imported.name)
+                import_str = f"import {', '.join(specifiers)} from '{source}'"
+                self.component.imports.add(import_str)
         print(f"DEBUG: Scanned imports: {self.component.imports}")
