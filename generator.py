@@ -1,7 +1,6 @@
 import re
 import jsbeautifier
 
-
 class Vue3Generator:
     def __init__(self, component):
         self.component = component
@@ -15,8 +14,6 @@ class Vue3Generator:
         setup = self._generate_setup()
 
         # Fixing syntax and making it look prettier
-        setup = re.sub(r';;\s*$', ';', setup, flags=re.MULTILINE)
-        setup = re.sub(r'\)\s*$', ');', setup, flags=re.MULTILINE)
         setup = re.sub(r"this\.\$store", r'store', setup)
         setup = self.fix_this(setup)
 
@@ -25,10 +22,16 @@ class Vue3Generator:
         if props_count == 1:
             setup = re.sub(r'\bprops\b', '', setup)
 
+        # add root
+        setup, imports = self.add_root_instance(setup, imports);
+
         # Beautify the setup function
         options = jsbeautifier.default_options()
         options.wrap_line_length = 149
         setup = jsbeautifier.beautify(setup, options)
+        setup = re.sub(r'\)\s*$', ');', setup, flags=re.MULTILINE)
+        setup = re.sub(r';;\s*$', ';', setup, flags=re.MULTILINE)
+
 
         # Generate component content
         component_content = [f"{self.indent}name: '{self.component.name}'"]
@@ -52,7 +55,6 @@ class Vue3Generator:
         # Wrap the component in defineComponent
         script_content = f"""
 <script>
-import {{ defineComponent }} from 'vue';
 {imports}
 
 export default defineComponent({{
@@ -148,7 +150,7 @@ export default defineComponent({{
         setup_content.extend(self._generate_store_getters())
 
         # Add computed properties
-        setup_content.extend(self._genertate_computed())
+        setup_content.extend(self._generate_computed())
 
         # Add methods
         setup_content.extend(self._generate_methods())
@@ -181,7 +183,7 @@ export default defineComponent({{
             content.append('')
         return content
 
-    def _genertate_computed(self):
+    def _generate_computed(self):
         content = []
         for name, body in self.component.computed.items():
             if not body.startswith('store.getters.'):
@@ -222,44 +224,68 @@ export default defineComponent({{
     def _generate_methods(self):
         content = []
         for name, body in self.component.methods.items():
-            # Remove 'function' keyword if present
-            body = re.sub(r'^function\s*', '', body.strip())
+            formatted_body = self._format_method_body(body)
+            content.append(f"{self.indent}{self.indent}const {name} = {formatted_body};")
 
-            # Convert to arrow function if it's not already
-            if not '=>' in body:
-                body = body.replace('{', '=> {', 1)
-
-            content.append(f"{self.indent}{self.indent}const {name} = {body};")
         if content:
             content.append('')
         return content
 
     def _format_method_body(self, body):
-        # Remove extra semicolons at the end of lines
-        body = re.sub(r';;+\s*$', ';', body, flags=re.MULTILINE)
+        # Remove leading/trailing whitespace and 'function' keyword if present
+        body = re.sub(r'^\s*function\s*', '', body.strip())
 
-        # Ensure semicolons at the end of statements
-        body = re.sub(r'}\s*$', '};', body, flags=re.MULTILINE)
-        body = re.sub(r'}\s*else', '}; else', body)
+        # Split the function into parameters and body
+        match = re.match(r'(\(.*?\))?\s*{(.*)}\s*$', body, re.DOTALL)
+        if not match:
+            return body  # Return as-is if it doesn't match expected format
 
-        # Remove semicolons after blocks
-        body = re.sub(r'};(\s*else|\s*\})', '}$1', body)
+        params, body_content = match.groups()
+        params = params or '()'
 
-        # Ensure no semicolon after if, for, while conditions
-        body = re.sub(r'(if|for|while)\s*\((.*?)\);', r'\1 (\2)', body)
+        # Format the body content
+        formatted_body = self._format_body_content(body_content)
 
-        # Remove semicolons before closing curly braces
-        body = re.sub(r';\s*}', '}', body)
+        # Reconstruct the function as an arrow function
+        return f"{params} => {{\n{formatted_body}\n{self.indent}{self.indent}}}"
 
-        # Ensure semicolons after return statements
-        body = re.sub(r'return (.+?)\s*$', r'return $1;', body, flags=re.MULTILINE)
+    def _format_body_content(self, body):
+        lines = body.split('\n')
+        formatted_lines = []
+        indent_level = 1  # Start with one level of indentation inside the function body
+        in_object_literal = False
 
-        # Remove semicolons after opening curly braces
-        body = re.sub(r'{\s*;', '{', body)
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue  # Skip empty lines
 
-        # Ensure proper formatting for arrow functions
-        body = re.sub(r'=>\s*{', '=> {', body)
-        return body
+            # Handle opening braces
+            if line.endswith('{'):
+                formatted_lines.append(f"{self.indent * (indent_level + 2)}{line}")
+                indent_level += 1
+                if line.startswith('{'):
+                    in_object_literal = True
+                continue
+
+            # Handle closing braces
+            if line.startswith('}'):
+                indent_level -= 1
+                formatted_lines.append(f"{self.indent * (indent_level + 2)}{line}")
+                if line == '}' and in_object_literal:
+                    in_object_literal = False
+                continue
+
+            # Handle normal lines
+            formatted_line = f"{self.indent * (indent_level + 2)}{line}"
+
+            # Add semicolons
+            if not line.endswith(';') and not line.endswith('{') and not line.endswith('}') and not in_object_literal:
+                formatted_line += ';'
+
+            formatted_lines.append(formatted_line)
+
+        return '\n'.join(formatted_lines)
 
     def _generate_watch(self):
         content = []
@@ -298,3 +324,39 @@ export default defineComponent({{
             setup = re.sub(r'\bthis\.' + computed + r'\b', computed + '.value', setup)
 
         return setup
+
+    def add_root_instance(self, script, imports):
+        # Check if there are any occurrences of this.$something
+        if re.search(r'this\.\$\w+', script):
+            # Find the setup function
+            setup_match = re.search(r'(setup\s*\([^)]*\)\s*{)', script)
+            if setup_match:
+                setup_start = setup_match.start(1)
+                setup_end = setup_match.end(1)
+
+                # Prepare the lines to insert
+                insert_lines = f"\n{self.indent * 2}const instance = getCurrentInstance();\n{self.indent * 2}const root = instance.proxy.$root;\n"
+
+                # Insert the new lines after the setup function opening
+                modified_script = (
+                        script[:setup_end] +
+                        insert_lines +
+                        script[setup_end:]
+                )
+
+                # Update imports
+                vue_import_match = re.search(r'import\s*{([^}]*)}\s*from\s*[\'"]vue[\'"]', imports)
+                if vue_import_match:
+                    current_imports = vue_import_match.group(1)
+                    if 'getCurrentInstance' not in current_imports:
+                        new_imports = current_imports + ', getCurrentInstance'
+                        new_imports = ', '.join(sorted(set(new_imports.replace(' ', '').split(','))))
+                        updated_import = f"import {{ {new_imports} }} from 'vue';"
+                        imports = imports.replace(vue_import_match.group(0), updated_import)
+                else:
+                    imports += "\nimport { getCurrentInstance } from 'vue';"
+
+                return modified_script, imports
+
+        # If no modifications were made, return the original content
+        return script, imports

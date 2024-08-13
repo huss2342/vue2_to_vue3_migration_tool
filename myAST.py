@@ -341,8 +341,34 @@ class Vue2Scanner:
         elif node.type == 'SpreadElement':
             return f"...{self._node_to_string(node.argument)}"
 
+        elif node.type == 'SwitchStatement':
+            discriminant = self._node_to_string(node.discriminant)
+            cases = [self._node_to_string(case) for case in node.cases]
+            return f"switch ({discriminant}) {{{' '.join(cases)}}}"
+
+        elif node.type == 'SwitchCase':
+            if node.test:
+                test = self._node_to_string(node.test)
+                consequent = '; '.join([self._node_to_string(stmt) for stmt in node.consequent])
+                return f"case {test}: {consequent}"
+            else:
+                consequent = '; '.join([self._node_to_string(stmt) for stmt in node.consequent])
+                return f"default: {consequent}"
+
+        elif node.type == 'BreakStatement':
+            if node.label:
+                return f"break {self._node_to_string(node.label)};"
+            else:
+                return "break;"
+
+        elif node.type == 'NewExpression':
+            callee = self._node_to_string(node.callee)
+            args = ', '.join([self._node_to_string(arg) for arg in node.arguments])
+            return f"new {callee}({args})"
+
         else:
             return f"/* Unsupported node type: {node.type} */"
+
 
     def _param_to_string(self, param):
         if param.type == 'Identifier':
