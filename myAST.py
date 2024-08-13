@@ -187,14 +187,15 @@ class Vue2Scanner:
             return "None"
 
         if node.type in ['FunctionExpression', 'ArrowFunctionExpression']:
+            async_prefix = "async " if getattr(node, 'async', False) else ""
             params = ', '.join([self._param_to_string(p) for p in node.params])
             body = self._node_to_string(node.body)
             if node.type == 'ArrowFunctionExpression':
                 if len(node.params) == 1:
-                    return f"{params} => {body}"
-                return f"({params}) => {body}"
+                    return f"{async_prefix}({params}) => {body}"
+                return f"{async_prefix}({params}) => {body}"
             else:  # FunctionExpression
-                return f"function({params}) {body}"
+                return f"{async_prefix}function({params}) {body}"
 
         elif node.type == 'BlockStatement':
             statements = [self._node_to_string(stmt) for stmt in node.body]
