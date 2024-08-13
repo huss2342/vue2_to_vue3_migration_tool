@@ -10,41 +10,58 @@ class Vue3Generator:
     def generate(self):
         imports = self._generate_imports()
         components = self._generate_components()
+        mixins = self._generate_mixins()
         props = self._generate_props()
         setup = self._generate_setup()
 
-        # fixing syntax then making it look prettier
+        # Fixing syntax and making it look prettier
         setup = re.sub(r';;\s*$', ';', setup, flags=re.MULTILINE)
         setup = re.sub(r'\)\s*$', ');', setup, flags=re.MULTILINE)
         setup = re.sub(r"this\.\$store", r'store', setup)
         setup = self.fix_this(setup)
 
+        # Remove 'props' if it's used only once
         props_count = len(re.findall(r'\bprops\b', setup))
         if props_count == 1:
             setup = re.sub(r'\bprops\b', '', setup)
 
+        # Beautify the setup function
         options = jsbeautifier.default_options()
         options.wrap_line_length = 149
         setup = jsbeautifier.beautify(setup, options)
 
-        # starting
-        component_content = f"{self.indent}name: '{self.component.name}'"
+        # Generate component content
+        component_content = [f"{self.indent}name: '{self.component.name}'"]
+
         if components:
-            component_content += f",\n{components}"
+            component_content.append(components)
+
+        if mixins:
+            component_content.append(mixins)
 
         if props:
-            component_content += f",\n{self.indent}props: {{\n{props}\n{self.indent}}}"
+            props_formatted = f"{self.indent}props: {{\n{props}\n{self.indent}}}"
+            component_content.append(props_formatted)
 
         if setup:
-            component_content += f",\n{setup}"
+            component_content.append(setup)
 
-        return f"""<script>
+        # Join all parts of the component
+        full_component = ',\n'.join(component_content)
+
+        # Wrap the component in defineComponent
+        script_content = f"""
+<script>
+import {{ defineComponent }} from 'vue';
 {imports}
 
 export default defineComponent({{
-{component_content}
+{full_component}
 }});
-</script>"""
+</script>
+"""
+
+        return script_content.strip()
 
     def _generate_imports(self):
         imports = []
@@ -80,8 +97,20 @@ export default defineComponent({{
     def _generate_components(self):
         if not self.component.components:
             return ""
-        components = [f"{self.indent}{self.indent}{comp}" for comp in self.component.components.keys()]
-        return f"{self.indent}components: {{\n{',\\n'.join(components)}\n{self.indent}}}"
+
+        components_content = f"{self.indent}components: {{\n"
+        for name, value in self.component.components.items():
+            components_content += f"{self.indent * 2}{name}: {value},\n"
+        components_content += f"{self.indent}}}"
+
+        return components_content
+
+    def _generate_mixins(self):
+        if not self.component.mixins:
+            return ""
+
+        mixins_content = f"{self.indent}mixins: [{', '.join(self.component.mixins)}]"
+        return mixins_content
 
     def _generate_props(self):
         if not self.component.props:
@@ -93,8 +122,10 @@ export default defineComponent({{
             # Remove single quotes around words using regex
             prop_string = re.sub(r"'(\w+)'", r'\1', prop_string)
             prop_string = re.sub(r"True", r'true', prop_string)
-            prop_string = re.sub(r"{(.*)}", r'{ \1 }', prop_string)
             prop_string = re.sub(r"False", r'false', prop_string)
+            prop_string = re.sub(r"{(.*)}", r'{ \1 }', prop_string)
+            prop_string = re.sub(r"\'\(\) \=\> \{\}'", r'() => {}', prop_string)
+            prop_string = re.sub(r"\'\(\) \=\> \[\]'", r'() => {}', prop_string)
             prop_strings.append(prop_string)
         return ',\n'.join(prop_strings)
 
@@ -202,6 +233,33 @@ export default defineComponent({{
         if content:
             content.append('')
         return content
+
+    def _format_method_body(self, body):
+        # Remove extra semicolons at the end of lines
+        body = re.sub(r';;+\s*$', ';', body, flags=re.MULTILINE)
+
+        # Ensure semicolons at the end of statements
+        body = re.sub(r'}\s*$', '};', body, flags=re.MULTILINE)
+        body = re.sub(r'}\s*else', '}; else', body)
+
+        # Remove semicolons after blocks
+        body = re.sub(r'};(\s*else|\s*\})', '}$1', body)
+
+        # Ensure no semicolon after if, for, while conditions
+        body = re.sub(r'(if|for|while)\s*\((.*?)\);', r'\1 (\2)', body)
+
+        # Remove semicolons before closing curly braces
+        body = re.sub(r';\s*}', '}', body)
+
+        # Ensure semicolons after return statements
+        body = re.sub(r'return (.+?)\s*$', r'return $1;', body, flags=re.MULTILINE)
+
+        # Remove semicolons after opening curly braces
+        body = re.sub(r'{\s*;', '{', body)
+
+        # Ensure proper formatting for arrow functions
+        body = re.sub(r'=>\s*{', '=> {', body)
+        return body
 
     def _generate_watch(self):
         content = []

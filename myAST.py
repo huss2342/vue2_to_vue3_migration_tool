@@ -46,6 +46,8 @@ class Vue2Scanner:
                 self._scan_data(prop.value)
             elif prop.key.name == 'components':
                 self._scan_components(prop.value)
+            elif prop.key.name == 'mixins':
+                self._scan_mixins(prop.value)
             elif prop.key.name == 'props':
                 self._scan_props(prop.value)
             elif prop.key.name == 'computed':
@@ -56,6 +58,13 @@ class Vue2Scanner:
                 self._scan_watch(prop.value)
             elif prop.key.name in ['created', 'mounted', 'beforeDestroy']:
                 self._scan_lifecycle_hook(prop.key.name, prop.value)
+
+    def _scan_mixins(self, node):
+        if node.type == 'ArrayExpression':
+            for element in node.elements:
+                if element.type == 'Identifier':
+                    self.component.mixins.append(element.name)
+        print(f"DEBUG: Scanned mixins: {self.component.mixins}")
 
     def _scan_data(self, node):
         if node.type == 'FunctionExpression':
@@ -93,18 +102,18 @@ class Vue2Scanner:
     def _scan_components(self, node):
         if node.type == 'ObjectExpression':
             for prop in node.properties:
-                self.component.components[prop.key.name] = prop.key.name
+                if prop.type == 'Property' and prop.value.type == 'Identifier':
+                    self.component.components[prop.key.name] = prop.value.name
+                else:
+                    self.component.components[prop.key.name] = self._node_to_string(prop.value)
         print(f"DEBUG: Scanned components: {self.component.components}")
 
-    def _scan_props(self, node):
-        if node.type == 'ObjectExpression':
-            for prop in node.properties:
-                prop_name = prop.key.name
-                prop_value = self._get_prop_value(prop.value)
-                self.component.props[prop_name] = prop_value
-        print(f"DEBUG: Scanned props: {self.component.props}")
-
     def _get_prop_value(self, node):
+        if isinstance(node, str):
+            return node
+        if not hasattr(node, 'type'):
+            return str(node)
+
         if node.type == 'Identifier':
             print(f"DEBUG: Found identifier: {node.name}")
             return node.name
@@ -112,7 +121,29 @@ class Vue2Scanner:
             return {p.key.name: self._get_prop_value(p.value) for p in node.properties}
         elif node.type == 'Literal':
             return node.value
-        return str(node)
+        elif node.type == 'ArrowFunctionExpression':
+            params = ', '.join([self._node_to_string(p) for p in node.params])
+            body = self._node_to_string(node.body)
+            if getattr(node, 'expression', False):
+                return f"() => {body}"
+            else:
+                return f"() => {{}}"
+        elif node.type == 'FunctionExpression':
+            params = ', '.join([self._node_to_string(p) for p in node.params])
+            body = self._node_to_string(node.body)
+            return f"function({params}) {body}"
+        else:
+            return self._node_to_string(node)
+
+    def _scan_props(self, node):
+        if node.type == 'ObjectExpression':
+            for prop in node.properties:
+                prop_name = prop.key.name
+                prop_value = self._get_prop_value(prop.value)
+                if isinstance(prop_value, dict) and 'default' in prop_value:
+                    prop_value['default'] = self._get_prop_value(prop_value['default'])
+                self.component.props[prop_name] = prop_value
+        print(f"DEBUG: Scanned props: {self.component.props}")
 
     def _scan_methods(self, node):
         if node.type == 'ObjectExpression':
@@ -156,11 +187,14 @@ class Vue2Scanner:
             return "None"
 
         if node.type in ['FunctionExpression', 'ArrowFunctionExpression']:
-            params = ', '.join([p.name for p in node.params])
+            params = ', '.join([self._param_to_string(p) for p in node.params])
             body = self._node_to_string(node.body)
-            if len(node.params) == 1:
-                return f"{params} => {body}"
-            return f"({params}) => {body}"
+            if node.type == 'ArrowFunctionExpression':
+                if len(node.params) == 1:
+                    return f"{params} => {body}"
+                return f"({params}) => {body}"
+            else:  # FunctionExpression
+                return f"function({params}) {body}"
 
         elif node.type == 'BlockStatement':
             statements = [self._node_to_string(stmt) for stmt in node.body]
@@ -177,6 +211,25 @@ class Vue2Scanner:
                 return f"if ({condition}) {consequent} else {alternate}"
             else:
                 return f"if ({condition}) {consequent}"
+
+        elif node.type == 'TryStatement':
+            try_block = self._node_to_string(node.block)
+            catch_clause = ""
+            if node.handler:
+                catch_param = self._node_to_string(node.handler.param) if node.handler.param else ""
+                catch_body = self._node_to_string(node.handler.body)
+                catch_clause = f" catch ({catch_param}) {catch_body}"
+            finally_block = f" finally {self._node_to_string(node.finalizer)}" if node.finalizer else ""
+            return f"try {try_block}{catch_clause}{finally_block}"
+
+        elif node.type == 'AwaitExpression':
+            argument = self._node_to_string(node.argument)
+            return f"await {argument}"
+
+        elif node.type == 'CatchClause':
+            param = self._node_to_string(node.param) if node.param else ""
+            body = self._node_to_string(node.body)
+            return f"catch ({param}) {body}"
 
         elif node.type == 'ExpressionStatement':
             return self._node_to_string(node.expression)
@@ -261,6 +314,17 @@ class Vue2Scanner:
             alternate = self._node_to_string(node.alternate)
             return f"({test} ? {consequent} : {alternate})"
 
+        elif node.type == 'ObjectPattern':
+            properties = [self._node_to_string(p) for p in node.properties]
+            return f"{{ {', '.join(properties)} }}"
+
+        elif node.type == 'Property':
+            if node.shorthand:
+                return node.key.name
+            key = node.key.name if hasattr(node.key, 'name') else self._node_to_string(node.key)
+            value = self._node_to_string(node.value)
+
+            return f"{key}: {value}"
         elif node.type == 'TemplateLiteral':
             quasis = [self._node_to_string(q) for q in node.quasis]
             expressions = [self._node_to_string(e) for e in node.expressions]
@@ -279,6 +343,15 @@ class Vue2Scanner:
 
         else:
             return f"/* Unsupported node type: {node.type} */"
+
+    def _param_to_string(self, param):
+        if param.type == 'Identifier':
+            return param.name
+        elif param.type == 'ObjectPattern':
+            properties = [self._node_to_string(p) for p in param.properties]
+            return f"{{ {', '.join(properties)} }}"
+        else:
+            return f"/* Unsupported parameter type: {param.type} */"
 
     def _scan_imports(self, parsed):
         for node in parsed.body:

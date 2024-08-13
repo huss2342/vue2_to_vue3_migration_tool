@@ -5,6 +5,7 @@ class Vue2Component:
         self.props = {}
         self.data = {}
         self.computed = {}
+        self.mixins = []
         self.methods = {}
         self.watch = {}
         self.lifecycle_hooks = {}
