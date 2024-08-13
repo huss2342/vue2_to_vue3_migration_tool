@@ -152,18 +152,23 @@ class Vue2Scanner:
                 print("DEBUG: Unexpected argument structure in mapGetters call")
 
     def _node_to_string(self, node):
+        if node is None:
+            return "None"
+
         if node.type in ['FunctionExpression', 'ArrowFunctionExpression']:
             params = ', '.join([p.name for p in node.params])
             body = self._node_to_string(node.body)
-            # if only one parameterm, remove parentheses
             if len(node.params) == 1:
                 return f"{params} => {body}"
             return f"({params}) => {body}"
+
         elif node.type == 'BlockStatement':
             statements = [self._node_to_string(stmt) for stmt in node.body]
             return '{ ' + '; '.join(statements) + ' }'
+
         elif node.type == 'ReturnStatement':
             return f"return {self._node_to_string(node.argument)}"
+
         elif node.type == 'IfStatement':
             condition = self._node_to_string(node.test)
             consequent = self._node_to_string(node.consequent)
@@ -172,28 +177,35 @@ class Vue2Scanner:
                 return f"if ({condition}) {consequent} else {alternate}"
             else:
                 return f"if ({condition}) {consequent}"
+
         elif node.type == 'ExpressionStatement':
             return self._node_to_string(node.expression)
+
         elif node.type == 'AssignmentExpression':
             left = self._node_to_string(node.left)
             right = self._node_to_string(node.right)
             return f"{left} = {right};"
+
         elif node.type == 'VariableDeclaration':
             declarations = [self._node_to_string(decl) for decl in node.declarations]
             return f"{node.kind} {', '.join(declarations)}"
+
         elif node.type == 'VariableDeclarator':
             id_str = self._node_to_string(node.id)
             init_str = self._node_to_string(node.init) if node.init else None
             return f"{id_str} = {init_str}" if init_str else id_str
+
         elif node.type == 'BinaryExpression':
             left = self._node_to_string(node.left)
             right = self._node_to_string(node.right)
             return f"{left} {node.operator} {right}"
+
         elif node.type == 'UnaryExpression':
             argument = self._node_to_string(node.argument)
             if node.operator == '!' and node.argument.type == 'LogicalExpression':
                 return f"{node.operator}({argument})"
             return f"{node.operator}{argument}"
+
         elif node.type == 'LogicalExpression':
             left = self._node_to_string(node.left)
             right = self._node_to_string(node.right)
@@ -202,32 +214,69 @@ class Vue2Scanner:
             if node.right.type == 'LogicalExpression' and node.right.operator != node.operator:
                 right = f"({right})"
             return f"{left} {node.operator} {right}"
+
         elif node.type == 'Literal':
             if isinstance(node.value, bool):
                 return str(node.value).lower()
             return repr(node.value)
+
         elif node.type == 'Identifier':
             return node.name
+
         elif node.type == 'MemberExpression':
             obj = self._node_to_string(node.object)
             if node.computed:
                 prop = self._node_to_string(node.property)
                 return f"{obj}[{prop}]"
             else:
-                prop = self._node_to_string(node.property)
+                prop = node.property.name if hasattr(node.property, 'name') else self._node_to_string(node.property)
                 return f"{obj}.{prop}"
+
         elif node.type == 'CallExpression':
             callee = self._node_to_string(node.callee)
             args = ', '.join([self._node_to_string(arg) for arg in node.arguments])
             return f"{callee}({args})"
+
         elif node.type == 'ThisExpression':
             return 'this'
+
         elif node.type == 'ArrayExpression':
             elements = [self._node_to_string(el) for el in node.elements]
             return f"[{', '.join(elements)}]"
+
         elif node.type == 'ObjectExpression':
-            properties = [f"{p.key.name}: {self._node_to_string(p.value)}" for p in node.properties]
+            properties = []
+            for p in node.properties:
+                if p.type == 'SpreadElement':
+                    properties.append(f"...{self._node_to_string(p.argument)}")
+                elif p.type == 'Property':
+                    key = p.key.name if hasattr(p.key, 'name') else self._node_to_string(p.key)
+                    value = self._node_to_string(p.value)
+                    properties.append(f"{key}: {value}")
             return f"{{{', '.join(properties)}}}"
+
+        elif node.type == 'ConditionalExpression':
+            test = self._node_to_string(node.test)
+            consequent = self._node_to_string(node.consequent)
+            alternate = self._node_to_string(node.alternate)
+            return f"({test} ? {consequent} : {alternate})"
+
+        elif node.type == 'TemplateLiteral':
+            quasis = [self._node_to_string(q) for q in node.quasis]
+            expressions = [self._node_to_string(e) for e in node.expressions]
+            parts = []
+            for i in range(len(quasis)):
+                parts.append(quasis[i])
+                if i < len(expressions):
+                    parts.append(f"${{{expressions[i]}}}")
+            return f"`{''.join(parts)}`"
+
+        elif node.type == 'TemplateElement':
+            return node.value.cooked
+
+        elif node.type == 'SpreadElement':
+            return f"...{self._node_to_string(node.argument)}"
+
         else:
             return f"/* Unsupported node type: {node.type} */"
 
