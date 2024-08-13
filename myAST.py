@@ -202,7 +202,7 @@ class Vue2Scanner:
             return '{ ' + '; '.join(statements) + ' }'
 
         elif node.type == 'ReturnStatement':
-            return f"return {self._node_to_string(node.argument)}"
+            return f"return {self._node_to_string(node.argument)};"
 
         elif node.type == 'IfStatement':
             condition = self._node_to_string(node.test)
