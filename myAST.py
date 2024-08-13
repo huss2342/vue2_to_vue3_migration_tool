@@ -131,7 +131,7 @@ class Vue2Scanner:
         elif node.type == 'FunctionExpression':
             params = ', '.join([self._node_to_string(p) for p in node.params])
             body = self._node_to_string(node.body)
-            return f"function({params}) {body}"
+            return f"({params}) {body}"
         else:
             return self._node_to_string(node)
 
@@ -195,7 +195,7 @@ class Vue2Scanner:
                     return f"{async_prefix}({params}) => {body}"
                 return f"{async_prefix}({params}) => {body}"
             else:  # FunctionExpression
-                return f"{async_prefix}function({params}) {body}"
+                return f"{async_prefix}({params}) {body}"
 
         elif node.type == 'BlockStatement':
             statements = [self._node_to_string(stmt) for stmt in node.body]
