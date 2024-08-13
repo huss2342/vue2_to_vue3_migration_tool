@@ -24,6 +24,7 @@ class Vue3Generator:
 
         # add root
         setup, imports = self.add_root_instance(setup, imports);
+        setup, imports = self.fix_nextTick(setup, imports);
 
         # Beautify the setup function
         options = jsbeautifier.default_options()
@@ -86,7 +87,7 @@ export default defineComponent({{
             if 'beforeDestroy' in self.component.lifecycle_hooks:
                 vue_imports.append('onBeforeUnmount')
 
-        imports.append(f"import {{ {', '.join(sorted(vue_imports))} }} from 'vue';")
+        imports.append(f"import {{ {', '.join(sorted(vue_imports))} }} from 'vue'")
 
         if self.component.uses_vuex:
             imports.append("import { useStore } from 'js/store';")
@@ -143,22 +144,16 @@ export default defineComponent({{
             setup_content.append(f"{self.indent}{self.indent}const store = useStore();")
             setup_content.append('')
 
-        # Add reactive variables
         setup_content.extend(self._generate_reactive_vars())
 
-        # Add store.getters
         setup_content.extend(self._generate_store_getters())
 
-        # Add computed properties
         setup_content.extend(self._generate_computed())
 
-        # Add methods
         setup_content.extend(self._generate_methods())
 
-        # Add watch
         setup_content.extend(self._generate_watch())
 
-        # Add lifecycle hooks
         setup_content.extend(self._generate_lifecycle_hooks())
 
         # Return statement
@@ -290,8 +285,8 @@ export default defineComponent({{
     def _generate_watch(self):
         content = []
         for name, body in self.component.watch.items():
-            # if the name starts with 'props.'
-            if name.startswith('props.'):
+            # if the name can be found in the props object
+            if name in self.component.props:
                 content.append(f"{self.indent}{self.indent}watch(() => {name}, {body});")
             else:
                 content.append(f"{self.indent}{self.indent}watch({name}, {body});")
@@ -326,9 +321,7 @@ export default defineComponent({{
         return setup
 
     def add_root_instance(self, script, imports):
-        # Check if there are any occurrences of this.$something
         if re.search(r'this\.\$\w+', script):
-            # Find the setup function
             setup_match = re.search(r'(setup\s*\([^)]*\)\s*{)', script)
             if setup_match:
                 setup_start = setup_match.start(1)
@@ -337,21 +330,19 @@ export default defineComponent({{
                 # Prepare the lines to insert
                 insert_lines = f"\n{self.indent * 2}const instance = getCurrentInstance();\n{self.indent * 2}const root = instance.proxy.$root;\n"
 
-                # Insert the new lines after the setup function opening
                 modified_script = (
                         script[:setup_end] +
                         insert_lines +
                         script[setup_end:]
                 )
 
-                # Update imports
                 vue_import_match = re.search(r'import\s*{([^}]*)}\s*from\s*[\'"]vue[\'"]', imports)
                 if vue_import_match:
                     current_imports = vue_import_match.group(1)
                     if 'getCurrentInstance' not in current_imports:
                         new_imports = current_imports + ', getCurrentInstance'
                         new_imports = ', '.join(sorted(set(new_imports.replace(' ', '').split(','))))
-                        updated_import = f"import {{ {new_imports} }} from 'vue';"
+                        updated_import = f"import {{ {new_imports} }} from 'vue'"
                         imports = imports.replace(vue_import_match.group(0), updated_import)
                 else:
                     imports += "\nimport { getCurrentInstance } from 'vue';"
@@ -359,4 +350,24 @@ export default defineComponent({{
                 return modified_script, imports
 
         # If no modifications were made, return the original content
+        return script, imports
+
+    def fix_nextTick(self, script, imports):
+        if re.search(r'this\.\$nextTick', script):
+            # Replace this.$nextTick with nextTick
+            script = re.sub(r'this\.\$nextTick', 'nextTick', script)
+
+            vue_import_match = re.search(r'import\s*{([^}]*)}\s*from\s*[\'"]vue[\'"]', imports)
+            if vue_import_match:
+                current_imports = vue_import_match.group(1)
+                if 'nextTick' not in current_imports:
+                    new_imports = current_imports + ', nextTick'
+                    new_imports = ', '.join(sorted(set(new_imports.replace(' ', '').split(','))))
+                    updated_import = f"import {{ {new_imports} }} from 'vue';"
+                    imports = imports.replace(vue_import_match.group(0), updated_import)
+            else:
+                imports += "\nimport { nextTick } from 'vue';"
+
+            return script, imports
+
         return script, imports

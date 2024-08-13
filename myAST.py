@@ -109,6 +109,8 @@ class Vue2Scanner:
         print(f"DEBUG: Scanned components: {self.component.components}")
 
     def _get_prop_value(self, node):
+        if node is None:
+            return "null"
         if isinstance(node, str):
             return node
         if not hasattr(node, 'type'):
@@ -184,7 +186,7 @@ class Vue2Scanner:
 
     def _node_to_string(self, node):
         if node is None:
-            return "None"
+            return "null"
 
         if node.type in ['FunctionExpression', 'ArrowFunctionExpression']:
             async_prefix = "async " if getattr(node, 'async', False) else ""
@@ -192,9 +194,14 @@ class Vue2Scanner:
             body = self._node_to_string(node.body)
             if node.type == 'ArrowFunctionExpression':
                 if len(node.params) == 1:
-                    return f"{async_prefix}({params}) => {body}"
+                    # Remove parentheses for single parameter
+                    return f"{async_prefix}{params} => {body}"
                 return f"{async_prefix}({params}) => {body}"
             else:  # FunctionExpression
+                if len(node.params) == 1:
+                    # Remove parentheses for single parameter
+                    return f"{async_prefix}{params} => {body}"
+
                 return f"{async_prefix}({params}) => {body}"
 
         elif node.type == 'BlockStatement':
@@ -270,7 +277,9 @@ class Vue2Scanner:
             return f"{left} {node.operator} {right}"
 
         elif node.type == 'Literal':
-            if isinstance(node.value, bool):
+            if node.value is None:
+                return "null"  # Explicitly handle null literals
+            elif isinstance(node.value, bool):
                 return str(node.value).lower()
             return repr(node.value)
 
