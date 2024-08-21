@@ -32,6 +32,7 @@ class Vue3Generator:
         setup = jsbeautifier.beautify(setup, options)
         setup = re.sub(r'\)\s*$', ');', setup, flags=re.MULTILINE)
         setup = re.sub(r';;\s*$', ';', setup, flags=re.MULTILINE)
+        setup = re.sub(r'return null;', 'return;', setup, flags=re.MULTILINE)
 
 
         # Generate component content
@@ -103,7 +104,10 @@ export default defineComponent({{
 
         components_content = f"{self.indent}components: {{\n"
         for name, value in self.component.components.items():
-            components_content += f"{self.indent * 2}{name}: {value},\n"
+            # if it is the last component, remove the comma
+            components_content += f"{self.indent * 2}{value},\n"
+            if name == list(self.component.components.keys())[-1]:
+                components_content = components_content[:-2] + "\n"
         components_content += f"{self.indent}}}"
 
         return components_content
