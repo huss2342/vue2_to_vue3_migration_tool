@@ -1,4 +1,4 @@
-from myAST import Vue2Scanner
+from parser import Vue2Scanner
 from generator import Vue3Generator
 # import jsbeautifier
 

@@ -1,6 +1,7 @@
 import re
 import jsbeautifier
 
+
 class Vue3Generator:
     def __init__(self, component):
         self.component = component
@@ -33,7 +34,6 @@ class Vue3Generator:
         setup = re.sub(r'\)\s*$', ');', setup, flags=re.MULTILINE)
         setup = re.sub(r';;\s*$', ';', setup, flags=re.MULTILINE)
         setup = re.sub(r'return null;', 'return;', setup, flags=re.MULTILINE)
-
 
         # Generate component content
         component_content = [f"{self.indent}name: '{self.component.name}'"]

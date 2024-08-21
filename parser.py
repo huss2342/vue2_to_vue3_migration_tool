@@ -2,6 +2,7 @@ import re
 import esprima
 from Vue2Component import Vue2Component
 
+
 class Vue2Scanner:
     def __init__(self, content):
         self.content = content
@@ -378,7 +379,6 @@ class Vue2Scanner:
 
         else:
             return f"/* Unsupported node type: {node.type} */"
-
 
     def _param_to_string(self, param):
         if param.type == 'Identifier':
