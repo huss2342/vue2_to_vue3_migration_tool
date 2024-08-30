@@ -18,6 +18,7 @@ This tool is currently a work in progress. While it can handle many common conve
 - Will miss semicolons or make other minor syntax errors
 - Complex or nested structures might require manual review and adjustment
 - It will have issues with lines that use regex
+- Review the input.txt and output.txt files for current limitation
 
 ## Usage
 1. Place your Vue2 component code in the `input.txt` file.
