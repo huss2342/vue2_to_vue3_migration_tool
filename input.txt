@@ -1,1 +1,58 @@
+<script>
+import { mapGetters } from 'vuex';
+import ChildComponent from './ChildComponent.vue';
 
+export default {
+  name: 'UserProfile',
+  components: {
+    ChildComponent
+  },
+  props: {
+    userId: {
+      type: Number,
+      required: true
+    }
+  },
+  data() {
+    return {
+      postCount: 0
+    };
+  },
+  computed: {
+    ...mapGetters(['user']),
+    fullName() {
+      return `${this.user.firstName} ${this.user.lastName}`;
+    }
+  },
+  methods: {
+    incrementPostCount() {
+      this.postCount++;
+      this.$emit('post-added', this.postCount);
+    },
+    async fetchUserData() {
+      try {
+        await this.$store.dispatch('fetchUser', this.userId);
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
+      }
+    }
+  },
+  watch: {
+    userId: {
+      handler: 'fetchUserData',
+      immediate: true
+    }
+  },
+  created() {
+    console.log('UserProfile component created');
+  },
+  mounted() {
+    this.$nextTick(() => {
+      console.log('UserProfile component mounted');
+    });
+  },
+  beforeDestroy() {
+    console.log('UserProfile component will be destroyed');
+  }
+};
+</script>

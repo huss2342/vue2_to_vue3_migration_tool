@@ -1,1 +1,64 @@
+<script>
+import { computed, defineComponent, getCurrentInstance, nextTick, onBeforeMount, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useStore } from 'js/store';
+import ChildComponent from './ChildComponent.vue';
 
+export default defineComponent({
+    name: 'UserProfile',
+    components: {
+        ChildComponent
+    },
+    props: {
+        userId: { type: Number, required: true }
+    },
+    setup(props) {
+        const instance = getCurrentInstance();
+        const root = instance.proxy.$root;
+
+        const store = useStore();
+
+        const postCount = ref(0);
+
+        const user = computed(() => store.getters.user);
+
+        const fullName = computed({
+            `${user.value.firstName} ${user.value.lastName}`
+        });
+
+        const incrementPostCount = () => {
+            /* Unsupported node type: UpdateExpression */ ;
+            this.$emit('post-added', postCount.value);
+        };
+        const fetchUserData = () => {
+            try {
+                await store.dispatch('fetchUser', props.userId);
+            } catch (error) => {
+                console.error('Failed to fetch user data:', error);
+            }
+        };
+
+        watch(() => userId, {
+            handler: 'fetchUserData',
+            immediate: true
+        });
+        onBeforeMount(() => {
+            console.log('UserProfile component created');
+        });
+        onMounted(() => {
+            nextTick(() => {
+                console.log('UserProfile component mounted');
+            });
+        });
+        onBeforeUnmount(() => {
+            console.log('UserProfile component will be destroyed');
+        });
+        return {
+            user,
+            fullName,
+            incrementPostCount,
+            fetchUserData,
+            postCount
+        };
+    }
+});
+</script>
